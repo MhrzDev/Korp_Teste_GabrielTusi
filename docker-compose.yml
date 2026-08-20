@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-korp_invoices}
+      POSTGRES_USER: ${POSTGRES_USER:-korp_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-korp_local_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database-init.sql:/docker-entrypoint-initdb.d/01-create-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-korp_app} -d ${POSTGRES_DB:-korp_invoices}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  inventory-api:
+    build:
+      context: ./backend/InventoryService
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=korp_inventory;Username=${POSTGRES_USER:-korp_app};Password=${POSTGRES_PASSWORD:-korp_local_password}
+    ports:
+      - "${INVENTORY_PORT:-8081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  billing-api:
+    build:
+      context: ./backend/BillingService
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=korp_billing;Username=${POSTGRES_USER:-korp_app};Password=${POSTGRES_PASSWORD:-korp_local_password}
+      Services__InventoryUrl: http://inventory-api:8080
+    ports:
+      - "${BILLING_PORT:-8082}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      inventory-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-4200}:80"
+    depends_on:
+      inventory-api:
+        condition: service_healthy
+      billing-api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
