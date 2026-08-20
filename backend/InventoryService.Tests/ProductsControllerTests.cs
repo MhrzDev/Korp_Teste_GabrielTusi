@@ -3,6 +3,7 @@ using InventoryService.Data;
 using InventoryService.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Xunit;
 
 namespace InventoryService.Tests;
 
